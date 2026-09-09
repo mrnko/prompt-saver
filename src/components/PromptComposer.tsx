@@ -1,23 +1,28 @@
 import { Check, Mic, Pause, Sparkles, X } from 'lucide-react';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import type { Project } from '../types';
 
 interface Props {
   value: string;
   editing: boolean;
   hasApiKey: boolean;
+  projects: Project[];
+  projectId: number | null;
   busy?: boolean;
   onChange: (text: string) => void;
+  onProjectChange: (id: number | null) => void;
   onSave: () => void;
   onImprove: () => void;
   onCancelEdit: () => void;
   onError: (message: string) => void;
 }
 
-export function PromptComposer({ value, editing, hasApiKey, busy, onChange, onSave, onImprove, onCancelEdit, onError }: Props) {
+export function PromptComposer({ value, editing, hasApiKey, projects, projectId, busy, onChange, onProjectChange, onSave, onImprove, onCancelEdit, onError }: Props) {
   const voice = useVoiceRecorder((text) => onChange(value ? `${value}${value.endsWith('\n') ? '' : '\n'}${text}` : text), onError);
   return <section className="composer card">
     <div className="composer-heading"><div><p className="eyebrow">{editing ? 'РЕДАГУВАННЯ' : 'НОВИЙ ПРОМПТ'}</p><h2>{editing ? 'Уточніть завдання' : 'Що потрібно підготувати?'}</h2></div>{editing && <button className="icon-button" title="Скасувати редагування" onClick={onCancelEdit}><X size={18}/></button>}</div>
     <textarea autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder="Опишіть задачу, ідею або вимоги…" aria-label="Текст промпту" />
+    <label className="project-select">Проєкт<select value={projectId ?? ''} onChange={(event) => onProjectChange(event.target.value ? Number(event.target.value) : null)}><option value="">Загальний список</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     <div className="composer-actions">
       <div className="left-actions">
         <button className={`soft-button ${voice.isRecording ? 'recording' : ''}`} disabled={!hasApiKey || voice.isTranscribing} onClick={voice.isRecording ? voice.stop : voice.start} title={hasApiKey ? 'Голосовий ввід' : 'Додайте API key у налаштуваннях'}>

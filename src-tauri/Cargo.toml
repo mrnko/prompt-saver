@@ -1,6 +1,6 @@
 [package]
 name = "prompt-saver"
-version = "0.1.0"
+version = "0.2.2"
 description = "A calm place to prepare development prompts"
 authors = ["Prompt Saver contributors"]
 edition = "2021"
@@ -13,6 +13,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+arboard = "3"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 keyring = { version = "3", features = ["windows-native"] }
@@ -22,4 +23,3 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 thiserror = "2"
-

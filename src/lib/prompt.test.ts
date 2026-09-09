@@ -8,8 +8,8 @@ describe('prompt presentation', () => {
 
   it('splits ordinary and completed prompts', () => {
     const prompts = [
-      { id: 1, text: 'A', status: 'normal' as const, createdAt: '', updatedAt: '', completedAt: null },
-      { id: 2, text: 'B', status: 'completed' as const, createdAt: '', updatedAt: '', completedAt: '' }
+      { id: 1, text: 'A', status: 'normal' as const, projectId: null, projectName: null, createdAt: '', updatedAt: '', completedAt: null },
+      { id: 2, text: 'B', status: 'completed' as const, projectId: null, projectName: null, createdAt: '', updatedAt: '', completedAt: '' }
     ];
     expect(splitPrompts(prompts)).toMatchObject({ active: [{ id: 1 }], completed: [{ id: 2 }] });
   });

@@ -26,9 +26,19 @@ struct Prompt {
     id: i64,
     text: String,
     status: String,
+    project_id: Option<i64>,
+    project_name: Option<String>,
     created_at: String,
     updated_at: String,
     completed_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Project {
+    id: i64,
+    name: String,
+    created_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,12 +65,23 @@ struct DailyStats {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProjectTaskStats {
+    project_id: Option<i64>,
+    name: String,
+    total: i64,
+    normal: i64,
+    completed: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Stats {
     today: PeriodStats,
     yesterday: PeriodStats,
     week: PeriodStats,
     month: PeriodStats,
     daily: Vec<DailyStats>,
+    project_tasks: Vec<ProjectTaskStats>,
 }
 
 fn now() -> String {
@@ -95,7 +116,7 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn initialize_database(path: PathBuf) -> Result<Connection, String> {
-    let connection = Connection::open(path.join("prompt-saver.sqlite3")).map_err(|error| error.to_string())?;
+    let mut connection = Connection::open(path.join("prompt-saver.sqlite3")).map_err(|error| error.to_string())?;
     connection
         .execute_batch(
             "
@@ -123,7 +144,33 @@ fn initialize_database(path: PathBuf) -> Result<Connection, String> {
             ",
         )
         .map_err(|error| error.to_string())?;
+    migrate_database(&mut connection)?;
     Ok(connection)
+}
+
+fn migrate_database(connection: &mut Connection) -> Result<(), String> {
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    transaction.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            created_at TEXT NOT NULL
+        );
+        ",
+    ).map_err(|error| error.to_string())?;
+    let has_project_column = transaction
+        .prepare("PRAGMA table_info(prompts)").map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1)).map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?
+        .iter().any(|column| column == "project_id");
+    if !has_project_column {
+        transaction.execute("ALTER TABLE prompts ADD COLUMN project_id INTEGER REFERENCES projects(id)", [])
+            .map_err(|error| format!("Не вдалося оновити локальне сховище: {error}"))?;
+    }
+    transaction.execute_batch("CREATE INDEX IF NOT EXISTS prompts_project_status_created ON prompts(project_id, status, created_at DESC);")
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
 }
 
 fn map_prompt(row: &rusqlite::Row<'_>) -> rusqlite::Result<Prompt> {
@@ -131,9 +178,11 @@ fn map_prompt(row: &rusqlite::Row<'_>) -> rusqlite::Result<Prompt> {
         id: row.get(0)?,
         text: row.get(1)?,
         status: row.get(2)?,
-        created_at: row.get(3)?,
-        updated_at: row.get(4)?,
-        completed_at: row.get(5)?,
+        project_id: row.get(3)?,
+        project_name: row.get(4)?,
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
+        completed_at: row.get(7)?,
     })
 }
 
@@ -141,7 +190,7 @@ fn map_prompt(row: &rusqlite::Row<'_>) -> rusqlite::Result<Prompt> {
 fn list_prompts(state: State<'_, AppState>) -> Result<Vec<Prompt>, String> {
     let connection = state.db.lock().map_err(|_| "Сховище зайняте".to_string())?;
     let mut statement = connection
-        .prepare("SELECT id, text, status, created_at, updated_at, completed_at FROM prompts ORDER BY CASE status WHEN 'normal' THEN 0 ELSE 1 END, created_at DESC")
+        .prepare("SELECT prompts.id, prompts.text, prompts.status, prompts.project_id, projects.name, prompts.created_at, prompts.updated_at, prompts.completed_at FROM prompts LEFT JOIN projects ON projects.id = prompts.project_id ORDER BY CASE prompts.status WHEN 'normal' THEN 0 ELSE 1 END, prompts.created_at DESC")
         .map_err(|error| error.to_string())?;
     let prompts = statement
         .query_map([], map_prompt)
@@ -151,24 +200,57 @@ fn list_prompts(state: State<'_, AppState>) -> Result<Vec<Prompt>, String> {
     Ok(prompts)
 }
 
+fn validate_project(connection: &Connection, project_id: Option<i64>) -> Result<(), String> {
+    if let Some(id) = project_id {
+        let exists: i64 = connection.query_row("SELECT COUNT(*) FROM projects WHERE id = ?1", [id], |row| row.get(0)).map_err(|error| error.to_string())?;
+        if exists == 0 { return Err("Проєкт не знайдено".into()); }
+    }
+    Ok(())
+}
+
 #[tauri::command]
-fn create_prompt(text: String, state: State<'_, AppState>) -> Result<Prompt, String> {
+fn list_projects(state: State<'_, AppState>) -> Result<Vec<Project>, String> {
+    let connection = state.db.lock().map_err(|_| "Сховище зайняте".to_string())?;
+    let mut statement = connection.prepare("SELECT id, name, created_at FROM projects ORDER BY name COLLATE NOCASE").map_err(|error| error.to_string())?;
+    let projects = statement.query_map([], |row| Ok(Project { id: row.get(0)?, name: row.get(1)?, created_at: row.get(2)? }))
+        .map_err(|error| error.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    Ok(projects)
+}
+
+#[tauri::command]
+fn create_project(name: String, state: State<'_, AppState>) -> Result<Project, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() { return Err("Введіть назву проєкту".into()); }
+    let connection = state.db.lock().map_err(|_| "Сховище зайняте".to_string())?;
+    let created_at = now();
+    match connection.execute("INSERT INTO projects(name, created_at) VALUES (?1, ?2)", params![name, created_at]) {
+        Ok(_) => {},
+        Err(rusqlite::Error::SqliteFailure(_, _)) => return Err("Проєкт із такою назвою вже існує".into()),
+        Err(error) => return Err(error.to_string()),
+    }
+    let id = connection.last_insert_rowid();
+    connection.query_row("SELECT id, name, created_at FROM projects WHERE id = ?1", [id], |row| Ok(Project { id: row.get(0)?, name: row.get(1)?, created_at: row.get(2)? })).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn create_prompt(text: String, project_id: Option<i64>, state: State<'_, AppState>) -> Result<Prompt, String> {
     let text = text.trim().to_owned();
     if text.is_empty() {
         return Err("Введіть текст промпту".into());
     }
     let timestamp = now();
     let connection = state.db.lock().map_err(|_| "Сховище зайняте".to_string())?;
+    validate_project(&connection, project_id)?;
     connection
         .execute(
-            "INSERT INTO prompts(text, status, created_at, updated_at) VALUES (?1, 'normal', ?2, ?2)",
-            params![text, timestamp],
+            "INSERT INTO prompts(text, status, project_id, created_at, updated_at) VALUES (?1, 'normal', ?2, ?3, ?3)",
+            params![text, project_id, timestamp],
         )
         .map_err(|error| error.to_string())?;
     let id = connection.last_insert_rowid();
     connection
         .query_row(
-            "SELECT id, text, status, created_at, updated_at, completed_at FROM prompts WHERE id = ?1",
+            "SELECT prompts.id, prompts.text, prompts.status, prompts.project_id, projects.name, prompts.created_at, prompts.updated_at, prompts.completed_at FROM prompts LEFT JOIN projects ON projects.id = prompts.project_id WHERE prompts.id = ?1",
             [id],
             map_prompt,
         )
@@ -176,14 +258,15 @@ fn create_prompt(text: String, state: State<'_, AppState>) -> Result<Prompt, Str
 }
 
 #[tauri::command]
-fn update_prompt(id: i64, text: String, state: State<'_, AppState>) -> Result<Prompt, String> {
+fn update_prompt(id: i64, text: String, project_id: Option<i64>, state: State<'_, AppState>) -> Result<Prompt, String> {
     let text = text.trim().to_owned();
     if text.is_empty() {
         return Err("Текст промпту не може бути порожнім".into());
     }
     let connection = state.db.lock().map_err(|_| "Сховище зайняте".to_string())?;
+    validate_project(&connection, project_id)?;
     if connection
-        .execute("UPDATE prompts SET text = ?1, updated_at = ?2 WHERE id = ?3", params![text, now(), id])
+        .execute("UPDATE prompts SET text = ?1, project_id = ?2, updated_at = ?3 WHERE id = ?4", params![text, project_id, now(), id])
         .map_err(|error| error.to_string())?
         == 0
     {
@@ -191,7 +274,7 @@ fn update_prompt(id: i64, text: String, state: State<'_, AppState>) -> Result<Pr
     }
     connection
         .query_row(
-            "SELECT id, text, status, created_at, updated_at, completed_at FROM prompts WHERE id = ?1",
+            "SELECT prompts.id, prompts.text, prompts.status, prompts.project_id, projects.name, prompts.created_at, prompts.updated_at, prompts.completed_at FROM prompts LEFT JOIN projects ON projects.id = prompts.project_id WHERE prompts.id = ?1",
             [id],
             map_prompt,
         )
@@ -215,7 +298,7 @@ fn toggle_prompt(id: i64, state: State<'_, AppState>) -> Result<Prompt, String> 
     .map_err(|error| error.to_string())?;
     connection
         .query_row(
-            "SELECT id, text, status, created_at, updated_at, completed_at FROM prompts WHERE id = ?1",
+            "SELECT prompts.id, prompts.text, prompts.status, prompts.project_id, projects.name, prompts.created_at, prompts.updated_at, prompts.completed_at FROM prompts LEFT JOIN projects ON projects.id = prompts.project_id WHERE prompts.id = ?1",
             [id],
             map_prompt,
         )
@@ -229,6 +312,13 @@ fn delete_prompt(id: i64, state: State<'_, AppState>) -> Result<(), String> {
         return Err("Промпт не знайдено".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+fn copy_prompt_to_clipboard(text: String) -> Result<(), String> {
+    if text.is_empty() { return Err("Немає тексту для копіювання".into()); }
+    let mut clipboard = arboard::Clipboard::new().map_err(|error| format!("Не вдалося відкрити буфер обміну: {error}"))?;
+    clipboard.set_text(text).map_err(|error| format!("Не вдалося скопіювати промпт: {error}"))
 }
 
 #[tauri::command]
@@ -400,12 +490,25 @@ fn get_stats(state: State<'_, AppState>) -> Result<Stats, String> {
         let next = date + Duration::days(1);
         daily.push(DailyStats { date: date.format("%d.%m").to_string(), created: count("created_at", date, next)?, completed: count("completed_at", date, next)? });
     }
+    let unassigned = connection.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = 'normal' THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) FROM prompts WHERE project_id IS NULL",
+        [],
+        |row| Ok(ProjectTaskStats { project_id: None, name: "Загальний список".into(), total: row.get(0)?, normal: row.get(1)?, completed: row.get(2)? }),
+    ).map_err(|error| error.to_string())?;
+    let mut project_tasks = vec![unassigned];
+    let mut statement = connection.prepare(
+        "SELECT projects.id, projects.name, COUNT(prompts.id), COALESCE(SUM(CASE WHEN prompts.status = 'normal' THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN prompts.status = 'completed' THEN 1 ELSE 0 END), 0) FROM projects LEFT JOIN prompts ON prompts.project_id = projects.id GROUP BY projects.id, projects.name ORDER BY projects.name COLLATE NOCASE",
+    ).map_err(|error| error.to_string())?;
+    let project_rows = statement.query_map([], |row| Ok(ProjectTaskStats { project_id: Some(row.get(0)?), name: row.get(1)?, total: row.get(2)?, normal: row.get(3)?, completed: row.get(4)? }))
+        .map_err(|error| error.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    project_tasks.extend(project_rows);
     Ok(Stats {
         today: period(today, today + Duration::days(1))?,
         yesterday: period(today - Duration::days(1), today)?,
         week: period(today - Duration::days(6), today + Duration::days(1))?,
         month: period(today - Duration::days(29), today + Duration::days(1))?,
         daily,
+        project_tasks,
     })
 }
 
@@ -457,10 +560,41 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            list_prompts, create_prompt, update_prompt, toggle_prompt, delete_prompt,
+            list_prompts, create_prompt, update_prompt, toggle_prompt, delete_prompt, copy_prompt_to_clipboard,
+            list_projects, create_project,
             get_draft, save_draft, clear_draft, get_settings, save_settings, clear_api_key,
             improve_prompt, transcribe_audio, get_stats
         ])
         .run(tauri::generate_context!())
         .expect("Помилка запуску Prompt Saver");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_existing_prompts_without_losing_them() {
+        let mut connection = Connection::open_in_memory().expect("in-memory database");
+        connection.execute_batch(
+            "
+            CREATE TABLE prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+            INSERT INTO prompts(text, status, created_at, updated_at) VALUES ('Наявний промпт', 'normal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            ",
+        ).expect("legacy schema");
+
+        migrate_database(&mut connection).expect("migration succeeds");
+
+        let remaining: i64 = connection.query_row("SELECT COUNT(*) FROM prompts WHERE text = 'Наявний промпт' AND project_id IS NULL", [], |row| row.get(0)).expect("prompt survives");
+        let projects_table: i64 = connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'projects'", [], |row| row.get(0)).expect("projects table check");
+        assert_eq!(remaining, 1);
+        assert_eq!(projects_table, 1);
+    }
 }

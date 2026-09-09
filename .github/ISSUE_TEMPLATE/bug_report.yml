@@ -1,0 +1,21 @@
+name: Помилка
+description: Повідомити про проблему у Prompt Saver
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: Що сталося?
+      description: Не додавайте API key або приватні промпти.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Кроки відтворення
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Версія застосунку та Windows
+    validations:
+      required: true

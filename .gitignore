@@ -1,0 +1,25 @@
+# JavaScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Tauri/Rust
+src-tauri/target/
+
+# Local Prompt Saver data and secrets
+data/
+prompt-saver.sqlite3
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.code-workspace
+Thumbs.db
+Desktop.ini

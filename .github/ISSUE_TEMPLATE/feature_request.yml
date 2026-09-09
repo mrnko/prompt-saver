@@ -1,0 +1,15 @@
+name: Пропозиція
+description: Запропонувати покращення
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Яку проблему це вирішує?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Бажане рішення
+    validations:
+      required: true

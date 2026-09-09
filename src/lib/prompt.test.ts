@@ -17,6 +17,7 @@ describe('prompt presentation', () => {
   it('assigns a complexity level from the prompt volume', () => {
     expect(promptComplexity('Коротко').tone).toBe('easy');
     expect(promptComplexity('a'.repeat(400)).tone).toBe('medium');
-    expect(promptComplexity('a'.repeat(1200)).tone).toBe('complex');
+    expect(promptComplexity('a'.repeat(1200)).tone).toBe('medium');
+    expect(promptComplexity('a'.repeat(2000)).tone).toBe('complex');
   });
 });

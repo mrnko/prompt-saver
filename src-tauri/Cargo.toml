@@ -1,6 +1,6 @@
 [package]
 name = "prompt-saver"
-version = "0.2.3"
+version = "0.2.4"
 description = "A calm place to prepare development prompts"
 authors = ["Prompt Saver contributors"]
 edition = "2021"

@@ -11,8 +11,8 @@ export function promptPreview(text: string) {
 export function promptComplexity(text: string) {
   const length = text.trim().length;
   if (length <= 260) return { label: 'Короткий промпт', tone: 'easy', percent: Math.max(12, Math.round((length / 260) * 33)) };
-  if (length <= 800) return { label: 'Середній промпт', tone: 'medium', percent: 34 + Math.round(((length - 260) / 540) * 32) };
-  return { label: 'Детальний промпт', tone: 'complex', percent: Math.min(100, 67 + Math.round(((length - 800) / 1200) * 33)) };
+  if (length <= 1600) return { label: 'Середній промпт', tone: 'medium', percent: 34 + Math.round(((length - 260) / 1340) * 32) };
+  return { label: 'Детальний промпт', tone: 'complex', percent: Math.min(100, 67 + Math.round(((length - 1600) / 1600) * 33)) };
 }
 
 export function formatDate(value: string) {

@@ -15,6 +15,6 @@ export function Settings({ settings, onSave, onClearKey }: { settings: SettingsP
     <label>OpenAI API key<input type="password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={settings.hasApiKey ? 'Ключ уже збережено' : 'sk-…'} autoComplete="off" /></label>
     <div className="settings-status">{settings.hasApiKey ? <><CheckCircle2 size={18}/><span>Ключ підключено</span><button className="text-danger" onClick={onClearKey}><Trash2 size={15}/> Видалити ключ</button></> : <span>AI-функції вимкнені до додавання ключа.</span>}</div>
     <button className="primary-button" disabled={saving || (custom && !model.trim())} onClick={submit}><Save size={17}/>{saving ? 'Зберігаємо…' : 'Зберегти налаштування'}</button>
-    <section className="update-info"><h3>Оновлення</h3><p>Версія 0.2.3. Закрийте застосунок і запустіть новий installer поверх поточної версії. Ваші промпти та налаштування збережуться.</p></section>
+    <section className="update-info"><h3>Оновлення</h3><p>Версія 0.2.4. Закрийте застосунок і запустіть новий installer поверх поточної версії. Ваші промпти та налаштування збережуться.</p></section>
   </section>;
 }

@@ -529,6 +529,7 @@ fn open_quick_window(app: &AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let database = initialize_database(app_data_dir(&app.handle())?)?;
             app.manage(AppState { db: Mutex::new(database) });

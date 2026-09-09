@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default capabilities for Prompt Saver",
   "windows": ["main", "quick"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "opener:default"]
 }

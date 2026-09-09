@@ -1,4 +1,5 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { CheckCircle2, ClipboardList, FolderKanban, LoaderCircle, Plus, Settings2, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from './components/Analytics';
@@ -14,6 +15,9 @@ import './project-styles.css';
 const emptyStats: Stats = { today: { created: 0, completed: 0 }, yesterday: { created: 0, completed: 0 }, week: { created: 0, completed: 0 }, month: { created: 0, completed: 0 }, daily: [], projectTasks: [] };
 const defaultSettings: SettingsPublic = { model: 'gpt-4.1-mini', hasApiKey: false };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
+const APP_VERSION = '0.2.5';
+const RELEASE_DATE = '9 вересня 2026';
+const CHANGELOG_URL = 'https://github.com/mrnko/prompt-saver/blob/main/CHANGELOG.md';
 
 export default function App() {
   const quick = new URLSearchParams(window.location.search).has('quick');
@@ -76,6 +80,7 @@ export default function App() {
   const createProject = async (name: string) => { try { setError(null); await api.createProject(name); await refresh(); } catch (failure) { setError(errorText(failure)); throw failure; } };
   const saveSettings = async (model: string, key: string) => { try { setError(null); setSettings(await api.saveSettings(model, key)); } catch (failure) { setError(errorText(failure)); throw failure; } };
   const clearKey = async () => { try { await api.clearApiKey(); setSettings((current) => ({ ...current, hasApiKey: false })); } catch (failure) { setError(errorText(failure)); } };
+  const openExternal = (url: string) => { void openUrl(url).catch((failure) => setError(errorText(failure))); };
 
   if (loading) return <main className="loading"><LoaderCircle className="spin" size={28}/> Завантажуємо ваші промпти…</main>;
   const composer = <PromptComposer value={text} editing={Boolean(editing)} hasApiKey={settings.hasApiKey} projects={projects} projectId={projectId} busy={saving} onChange={updateText} onProjectChange={setProjectId} onSave={savePrompt} onImprove={improve} onCancelEdit={resetComposer} onError={setError}/>;
@@ -87,6 +92,13 @@ export default function App() {
     {error && <div className="notice error"><span>{error}</span><button onClick={() => setError(null)} aria-label="Закрити"><X size={16}/></button></div>}
     {toast && <div className="toast"><CheckCircle2 size={17}/>{toast}</div>}
     {quick ? <><div className="quick-title"><p className="eyebrow">ШВИДКЕ ДОДАВАННЯ</p><h1>Новий промпт</h1></div>{composer}{preview}</> : tab === 'prompts' ? <><div className="page-intro"><div><p className="eyebrow">ВАШ СПИСОК</p><h2>Зберігайте думки, поки вони свіжі</h2></div><span className="count-badge"><Plus size={15}/>{active.length} активних</span></div>{composer}{preview}{promptList}</> : tab === 'projects' ? <Projects projects={projects} prompts={prompts} onCreate={createProject} onToggle={toggle} onEdit={startEdit} onDelete={setDeleteTarget} onCopy={copyPrompt}/> : <Settings settings={settings} onSave={saveSettings} onClearKey={clearKey}/>}
+    <footer className="app-footer">
+      <span>© 2026 Prompt Saver</span>
+      <div className="footer-links">
+        <button type="button" className="footer-link" onClick={() => openExternal(CHANGELOG_URL)}>Що нового</button>
+      </div>
+      <span>{`v${APP_VERSION} · ${RELEASE_DATE}`}</span>
+    </footer>
     {deleteTarget && <div className="modal-backdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><div className="modal-icon"><X size={22}/></div><h2 id="delete-title">Видалити промпт?</h2><p>Цю дію неможливо скасувати. Промпт буде видалено назавжди.</p><div className="modal-actions"><button className="soft-button" onClick={() => setDeleteTarget(null)}>Скасувати</button><button className="danger-button" onClick={confirmDelete}>Видалити</button></div></section></div>}
   </main>;
 }
